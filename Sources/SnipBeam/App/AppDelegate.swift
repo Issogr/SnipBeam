@@ -23,7 +23,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateMenu()
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        if CommandLine.arguments.contains("--smoke-test") {
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
+                     NSWorkspace.sessionDidResignActiveNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(sessionBecameInactive), name: name, object: nil)
+        }
+        if CommandLine.arguments.contains("--smoke-test") || CommandLine.arguments.contains("--performance-test") {
             Task { await CaptureSmokeTest.run(appDelegate: self) }
         }
     }
@@ -79,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let region = state.region else { return }
         let resume = state.isPaused
         perform { [self] in
-            if resume { try await capture.resume() } else { try await capture.pause() }
+            if resume { try await capture.resume(region: region) } else { try await capture.pause() }
             try Task.checkCancellation()
             state = resume ? .capturing(region) : .paused(region)
             preview?.setPaused(!resume)
@@ -147,6 +151,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard state.isSelecting || state.region != nil else { return }
         // ponytail: any display rearrangement ends capture; reselect rather than risk sharing the wrong area.
         stopCapture(error: CaptureError.message("The display configuration changed. Choose Select Region again."))
+    }
+
+    @objc private func sessionBecameInactive() {
+        guard state.isSelecting || state.region != nil else { return }
+        // End the session rather than silently resuming capture after sleep or user switching.
+        stopCapture()
     }
 
     private func updateMenu() { menuBar?.update(state: state, busy: busy, showsCursor: showsCursor) }

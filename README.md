@@ -74,6 +74,7 @@ Keep the preview open and unminimized. Conferencing apps can have their own Scre
 - **Close preview:** stops capture; the menu-bar app stays available.
 - **Select Region… again:** ends the previous capture before starting selection. Cancelling leaves the app idle.
 - **Quit SnipBeam:** exits the app and releases the capture session.
+- **Sleep or user-session switch:** ends capture and closes the preview. Select a region again when you return; capture does not restart automatically.
 
 All SnipBeam-owned windows are excluded by an application-level `SCContentFilter`, including windows opened after capture starts. Moving the preview over the source area reveals the content underneath it rather than creating a hall of mirrors.
 
@@ -104,8 +105,8 @@ SCStream (cropped display, own application excluded)
 - `sourceRect` is **display-local, top-left-origin logical points**. `CoordinateConverter` translates from bottom-left AppKit coordinates using the selected screen's own origin, clamps to that display, and aligns to physical pixel edges.
 - Output width/height use ScreenCaptureKit's `pointPixelScale`; Retina output keeps the region's backing-pixel resolution. Resizing the preview never reconfigures the crop.
 - The stream requests up to **60 FPS**, uses **queue depth 3**, BGRA pixels, and SDR sRGB output. ScreenCaptureKit may emit fewer complete frames when the source is unchanged.
-- One serial capture/render queue validates and renders frames off the main thread. The renderer keeps the newest texture and permits only one GPU submission in flight; it does not build a backlog. Core Video references stay alive until GPU completion.
-- The Metal device, command queue, texture cache, and pipeline are reused. A tiny shader is compiled once per preview from embedded source using Metal's runtime compiler, so the separate Xcode Metal toolchain is unnecessary. No captured frames are converted to `NSImage` or copied to CPU image buffers.
+- One serial capture/render queue validates and renders frames off the main thread. It retains only the newest pending pixel buffer and permits one GPU submission in flight. Texture mapping happens only when a drawable and GPU slot are available; dropped frames avoid that work. Core Video references stay alive until GPU completion, and per-work-item autorelease pools bound temporary-object lifetimes.
+- The Metal device, command queue, texture cache, render-pass descriptor, and pipeline are reused. The frame receiver reads native attachment dictionaries without bridging all metadata into Swift dictionaries. A tiny shader is compiled once per preview from embedded source using Metal's runtime compiler, so the separate Xcode Metal toolchain is unnecessary. No captured frames are converted to `NSImage` or copied to CPU image buffers.
 - AppKit work stays on the main actor. `AppDelegate` owns the capture state and serializes control operations so closing a window during an asynchronous start cannot revive the capture.
 
 ### Source layout
@@ -121,12 +122,20 @@ Sources/SnipBeam/
   Permissions/                      Screen Recording onboarding and retry
   MenuBar/                          Menu commands and enabled state
   Checks/CaptureSmokeTest.swift      Opt-in live integration check
-Resources/                          Info.plist, empty entitlements, original icon
-Tests/CoordinateChecks.swift         Framework-free geometry assertions
-scripts/                            Build, run, sign, icon generation, checks
+Resources/                          Info.plist, sandbox entitlement, original icon
+Tests/                              Geometry assertions and animation fixture
+scripts/                            Build, run, sign, icon generation, checks, profiling
 ```
 
-Replace `com.example.SnipBeam` in `Resources/Info.plist` before distribution. Queue labels use the same prefix for diagnostics. The entitlements file is deliberately empty: this unsandboxed utility needs no special entitlement, camera permission, microphone permission, or Accessibility permission to capture using ScreenCaptureKit. Permission is enforced by macOS TCC.
+Replace `com.example.SnipBeam` in `Resources/Info.plist` before distribution. Queue labels use the same prefix for diagnostics.
+
+### Security boundaries
+
+Packaged builds enable **App Sandbox** and **hardened runtime**, including ad-hoc development builds. The only entitlement is `com.apple.security.app-sandbox`: there are no network-client/server, user-file, camera, microphone, automation, JIT, debugger, or library-validation exceptions. Metal's native shader compiler works within these restrictions. Sandbox containers and OS-managed caches still exist; captured frames remain in memory.
+
+Screen Recording remains a separate, broad macOS TCC permission. SnipBeam restricts its stream to the selected rectangle, validates finite/in-bounds geometry and pixel dimensions before configuring capture, and rejects a stale display/scale rather than falling back to whole-screen capture. Display/system sleep and user-session switching close the preview and end the session. These protections do not erase frames already seen by meeting participants.
+
+The standalone executable produced by `swift build` is useful for debugging; the sandbox/hardened-runtime guarantees apply to the signed `.app` produced by `build-app.sh`. Ad-hoc signing does not establish a trusted publisher identity; use Developer ID signing and notarization for public distribution.
 
 The original icon is included. If `Resources/AppIcon.icns` is missing, packaging regenerates it from `scripts/make-icon.swift` with native AppKit and `iconutil`. Additional files in `Resources/` are copied into the bundle; the plist and signing entitlements are handled separately.
 
@@ -138,7 +147,7 @@ Geometry checks need no Screen Recording permission or XCTest installation:
 ./scripts/check.sh
 ```
 
-They cover above/below/left/right display origins, Y-axis conversion, 1×/2× scaling, pixel-edge alignment, minimum sizes, cross-display drag clamping, and portrait/landscape letterboxing.
+They cover above/below/left/right display origins, Y-axis conversion, 1×/2× scaling, pixel-edge alignment, minimum sizes, cross-display drag clamping, portrait/landscape letterboxing, and rejection of out-of-bounds, non-finite, or overflowing crops.
 
 After granting permission, quit any running copy and run the live integration check:
 
@@ -147,7 +156,14 @@ After granting permission, quit any running copy and run the live integration ch
 build/SnipBeam.app/Contents/MacOS/SnipBeam --smoke-test
 ```
 
-It briefly opens overlays and previews on connected displays, drives the real menu callbacks and selection views, and checks Escape, frame delivery/presentation, pixel dimensions, normal-window discovery, paused resizing, cursor configuration, resume, preview close, and app exit. It prints `PASS` or exits nonzero on failure/timeout. No frames are saved. This test changes SnipBeam's own windows only and does not require UI-automation permissions.
+It briefly opens overlays and previews on connected displays, drives the real menu callbacks and selection views, and checks Escape, frame delivery/presentation, pixel dimensions, normal-window discovery, paused resizing, cursor configuration, resume, preview close, and app exit. It also verifies the sandbox entitlement and tests capture shutdown using process-local sleep/session notifications; it does not actually put the Mac to sleep or switch users. It prints `PASS` or exits nonzero on failure/timeout. No frames are saved, and UI-automation permissions are not required.
+
+To check actual sandbox enforcement against the existing package manifest outside the app container:
+
+```bash
+SNIPBEAM_SANDBOX_PROBE="$PWD/Package.swift" \
+  build/SnipBeam.app/Contents/MacOS/SnipBeam --smoke-test
+```
 
 For a quick local CPU/memory measurement:
 
@@ -156,6 +172,20 @@ For a quick local CPU/memory measurement:
 ```
 
 Manual checks still matter: exact visible crop and cursor appearance, dragging across physical monitors with mixed scaling/rotation, display unplug/reconfiguration, permission revocation, and sharing with participants in each conferencing client. A successful window-discovery check alone does not establish compatibility with every client/version.
+
+### Resource measurement
+
+Quit any running copy, grant Screen Recording access, then run:
+
+```bash
+./scripts/measure.sh
+```
+
+This builds a release app and a separate, temporary animation fixture so capture has a repeatable moving source. It measures idle, capturing, paused, covered, minimized, and closed-preview states after warm-up, with five-second sampling intervals. The fixture exits when the script finishes. The normal app has no profiling timer.
+
+A local 640×360-pixel, 1× animated-region comparison measured **2.43% → 2.10% of one CPU core** while capturing, with about **27 MiB physical footprint** and **57 presentations/s** in both runs. Idle and paused CPU were about **0.01%**; cold idle footprint was about **14 MiB**. These are individual local runs, not a cross-hardware guarantee or a statistically established speedup.
+
+The measurements describe **SnipBeam's process**, not total WindowServer, GPU, or conferencing-app costs. Capture cannot have zero cost: three BGRA buffers for a 3840×2160 region alone represent roughly **95 MiB**, before preview surfaces and other overhead. Select only the area you need and pause when updates are unnecessary. A covered or minimized preview stays live because a conferencing app may still be consuming it; occlusion is not a safe signal to freeze sharing. The target stays 60 FPS at the selected region's native pixel resolution.
 
 ## Signing and future distribution
 
@@ -179,7 +209,7 @@ Or sign an existing bundle:
 SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/sign-app.sh build/SnipBeam.app
 ```
 
-Non-ad-hoc signing enables the hardened runtime and secure timestamp. For future public distribution, sign with **Developer ID Application**, then notarize. With `notarytool` credentials already stored under the keychain profile `SnipBeam-notary`, an example ZIP workflow is:
+All packaged builds enable the sandbox and hardened runtime; non-ad-hoc signing also requests a secure timestamp. For future public distribution, sign with **Developer ID Application**, then notarize. With `notarytool` credentials already stored under the keychain profile `SnipBeam-notary`, an example ZIP workflow is:
 
 ```bash
 ditto -c -k --keepParent build/SnipBeam.app build/SnipBeam.zip

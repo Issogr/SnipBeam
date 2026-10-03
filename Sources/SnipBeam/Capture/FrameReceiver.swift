@@ -18,8 +18,8 @@ final class FrameReceiver: NSObject, SCStreamOutput, @unchecked Sendable {
                 of outputType: SCStreamOutputType) {
         guard enabled, outputType == .screen, sampleBuffer.isValid,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(
-                sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-              let status = attachments.first?[.status] as? Int,
+                sampleBuffer, createIfNecessary: false) as? [NSDictionary],
+              let status = attachments.first?[SCStreamFrameInfo.status.rawValue] as? Int,
               status == SCFrameStatus.complete.rawValue,
               let pixels = sampleBuffer.imageBuffer,
               CVPixelBufferGetWidth(pixels) > 0, CVPixelBufferGetHeight(pixels) > 0,

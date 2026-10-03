@@ -16,6 +16,17 @@ enum CoordinateChecks {
             }
         }
         let bounds = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        assert(CoordinateConverter.isValidCaptureRect(bounds, displaySize: bounds.size, pixelScale: 2))
+        for rect in [CGRect.zero, CGRect(x: -1, y: 0, width: 20, height: 20),
+                     CGRect(x: 1910, y: 0, width: 20, height: 20),
+                     CGRect(x: 0, y: 1070, width: 20, height: 20),
+                     CGRect(x: CGFloat.nan, y: 0, width: 20, height: 20),
+                     CGRect(x: 100, y: 100, width: -20, height: 20)] {
+            assert(!CoordinateConverter.isValidCaptureRect(rect, displaySize: bounds.size, pixelScale: 1))
+        }
+        for scale in [CGFloat.zero, -1, .nan, .infinity, .greatestFiniteMagnitude] {
+            assert(!CoordinateConverter.isValidCaptureRect(bounds, displaySize: bounds.size, pixelScale: scale))
+        }
         let drag = CoordinateConverter.selectionRect(from: CGPoint(x: 600, y: 400),
                                                       to: CGPoint(x: -800, y: 1500), in: bounds)
         assert(drag == CGRect(x: 0, y: 400, width: 600, height: 680))
@@ -31,6 +42,6 @@ enum CoordinateChecks {
         assert(landscape.originX == 0 && landscape.originY == 87.5 && landscape.width == 400 && landscape.height == 225)
         let portrait = FrameRenderer.viewport(imageSize: CGSize(width: 360, height: 640), drawableSize: CGSize(width: 800, height: 400))
         assert(portrait.originX == 287.5 && portrait.originY == 0 && portrait.width == 225 && portrait.height == 400)
-        print("PASS: coordinate origins, Y flip, Retina pixel alignment, drag clamping, minimum size, letterboxing")
+        print("PASS: coordinate origins, Retina pixel alignment, drag clamping, fail-closed crop validation, letterboxing")
     }
 }

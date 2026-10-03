@@ -1,5 +1,6 @@
 import AppKit
 import ScreenCaptureKit
+import Security
 
 // Opt-in check of the real app controls: packaged executable --smoke-test.
 // Everything stays in memory; no screenshots or frames are written to disk.
@@ -7,12 +8,22 @@ import ScreenCaptureKit
 enum CaptureSmokeTest {
     static func run(appDelegate app: AppDelegate) async {
         setbuf(stdout, nil)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 30) {
-            print("FAIL: capture smoke check timed out after 30 seconds")
+        let profiling = CommandLine.arguments.contains("--performance-test")
+        DispatchQueue.global().asyncAfter(deadline: .now() + (profiling ? 120 : 30)) {
+            print("FAIL: capture check timed out")
             exit(1)
         }
         do {
+            guard let task = SecTaskCreateFromSelf(nil) else { throw CaptureError.message("Could not inspect code-signing entitlements.") }
+            try require(SecTaskCopyValueForEntitlement(task, "com.apple.security.app-sandbox" as CFString, nil) as? Bool == true,
+                        "The packaged app is not sandboxed.")
+            if let path = ProcessInfo.processInfo.environment["SNIPBEAM_SANDBOX_PROBE"] {
+                let result = access(path, R_OK)
+                try require(result == -1 && (errno == EPERM || errno == EACCES), "Sandbox allowed access to the external test fixture.")
+                print("PASS: sandbox denies access to the external test fixture")
+            }
             try require(CGPreflightScreenCaptureAccess(), "Grant SnipBeam Screen Recording permission before running the smoke check.")
+            if profiling { try await ResourceMeasurement.measure("idle") }
             let content = try await ScreenCaptureManager.content()
             let screens = NSScreen.screens.filter { screen in content.displays.contains { $0.displayID == CoordinateConverter.displayID(for: screen) } }
             try require(!screens.isEmpty, "No display is available.")
@@ -30,16 +41,7 @@ enum CaptureSmokeTest {
 
                 app.menuBar?.onSelect?()
                 try await wait(app)
-                let view = try overlay(on: screen)
-                let start = CGPoint(x: 80, y: 80)
-                let end = CGPoint(x: min(720, view.bounds.width), y: min(440, view.bounds.height))
-                func event(_ type: NSEvent.EventType, _ point: CGPoint) -> NSEvent {
-                    NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
-                        windowNumber: view.window!.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
-                }
-                view.mouseDown(with: event(.leftMouseDown, start))
-                view.mouseDragged(with: event(.leftMouseDragged, end))
-                view.mouseUp(with: event(.leftMouseUp, end))
+                try select(on: screen)
                 try await wait(app)
                 guard let region = app.state.region, let preview = app.preview, let renderer = preview.preview.renderer else {
                     throw CaptureError.message("Dragging did not start capture.")
@@ -49,6 +51,7 @@ enum CaptureSmokeTest {
                 try require(initial.received > 0 && initial.presented > 0 && initial.failures == 0,
                             "No frames reached the Metal drawable, or the GPU reported an error.")
                 try require(initial.size == CGSize(width: region.pixelWidth, height: region.pixelHeight), "Capture pixel size does not match the selected region.")
+                if profiling { try await ResourceMeasurement.measure("capturing", renderer: renderer) }
                 let windows = try await ScreenCaptureManager.content().windows
                 try require(windows.contains { $0.windowID == CGWindowID(preview.window!.windowNumber) && $0.title == "SnipBeam" && $0.windowLayer == 0 },
                             "SnipBeam was not discoverable as a normal shareable window.")
@@ -67,6 +70,7 @@ enum CaptureSmokeTest {
                             "Pause or resize changed the captured frames.")
                 try require(resized.presented > paused.presented && resized.drawableSize == preview.preview.drawableSize,
                             "Paused preview did not redraw at the new drawable size: presented \(paused.presented) → \(resized.presented), drawn \(resized.drawableSize), expected \(preview.preview.drawableSize).")
+                if profiling { try await ResourceMeasurement.measure("paused", renderer: renderer) }
 
                 app.menuBar?.onPause?()
                 try await wait(app)
@@ -76,6 +80,18 @@ enum CaptureSmokeTest {
                 let resumed = await renderer.statistics()
                 try require(!app.state.isPaused && resumed.received > paused.received && resumed.failures == 0,
                             "Resume did not restart frame delivery.")
+                if profiling {
+                    let cover = NSWindow(contentRect: preview.window!.frame, styleMask: .borderless, backing: .buffered, defer: false)
+                    cover.isReleasedWhenClosed = false
+                    cover.backgroundColor = .darkGray
+                    cover.level = .floating
+                    cover.orderFrontRegardless()
+                    try await ResourceMeasurement.measure("covered preview", renderer: renderer)
+                    cover.close()
+                    preview.window?.miniaturize(nil)
+                    try await ResourceMeasurement.measure("minimized preview", renderer: renderer)
+                    preview.window?.deminiaturize(nil)
+                }
                 preview.window?.performClose(nil)
                 try await wait(app)
                 try require(app.state.region == nil && app.preview == nil, "Closing the preview did not stop capture.")
@@ -84,7 +100,22 @@ enum CaptureSmokeTest {
                 let stopped = await renderer.statistics()
                 try require(closed.received == stopped.received, "Frames kept arriving after preview close.")
                 print("PASS: display \(region.display.displayID), scale \(region.pixelScale), \(resumed.size), \(resumed.received) frames, \(resumed.presented) presentations; selection/Escape, shareable window, resize, pause/resume, cursor updates, close")
+
+                // These notifications are process-local; the test does not put the Mac to sleep or switch users.
+                for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
+                             NSWorkspace.sessionDidResignActiveNotification] {
+                    app.menuBar?.onSelect?()
+                    try await wait(app)
+                    try select(on: screen)
+                    try await wait(app)
+                    try require(app.state.region != nil, "Session-stop check did not start capture.")
+                    NSWorkspace.shared.notificationCenter.post(name: name, object: NSWorkspace.shared)
+                    try await wait(app)
+                    try require(app.state.region == nil && app.preview == nil, "Sleep/session change did not end capture.")
+                }
+                print("PASS: sleep and session-switch notifications end capture")
             }
+            if profiling { try await ResourceMeasurement.measure("after close") }
             print("Capture smoke check completed.")
             NSApp.terminate(nil)
         } catch {
@@ -103,6 +134,19 @@ enum CaptureSmokeTest {
             throw CaptureError.message("No selection overlay on the requested display.")
         }
         return view
+    }
+
+    private static func select(on screen: NSScreen) throws {
+        let view = try overlay(on: screen)
+        let start = CGPoint(x: 80, y: 80)
+        let end = CGPoint(x: min(720, view.bounds.width), y: min(440, view.bounds.height))
+        func event(_ type: NSEvent.EventType, _ point: CGPoint) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                windowNumber: view.window!.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        view.mouseDown(with: event(.leftMouseDown, start))
+        view.mouseDragged(with: event(.leftMouseDragged, end))
+        view.mouseUp(with: event(.leftMouseUp, end))
     }
 
     private static func require(_ condition: Bool, _ message: String) throws {

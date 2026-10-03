@@ -4,6 +4,18 @@ import ScreenCaptureKit
 enum CoordinateConverter {
     static let minimumSelectionSize: CGFloat = 20
 
+    // Fail closed before configuring SCK: an empty/invalid crop must never fall back to a whole display.
+    static func isValidCaptureRect(_ rect: CGRect, displaySize: CGSize, pixelScale: CGFloat) -> Bool {
+        guard [rect.origin.x, rect.origin.y, rect.size.width, rect.size.height,
+               displaySize.width, displaySize.height, pixelScale].allSatisfy({ $0.isFinite }),
+              pixelScale > 0, displaySize.width > 0, displaySize.height > 0,
+              rect.size.width >= minimumSelectionSize, rect.size.height >= minimumSelectionSize,
+              CGRect(origin: .zero, size: displaySize).contains(rect),
+              let width = Int(exactly: (rect.width * pixelScale).rounded()),
+              let height = Int(exactly: (rect.height * pixelScale).rounded()) else { return false }
+        return width > 0 && height > 0
+    }
+
     @MainActor
     static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value

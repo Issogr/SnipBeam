@@ -4,14 +4,22 @@ import QuartzCore
 
 // Mutable state is confined to queue; CAMetalLayer supports off-main drawable presentation.
 final class FrameRenderer: @unchecked Sendable {
-    let queue = DispatchQueue(label: "com.example.SnipBeam.frames", qos: .userInteractive)
+    // CPU code never writes these capture buffers. GPU completion only releases this immutable lease.
+    private struct InFlightFrame: @unchecked Sendable {
+        let pixels: CVPixelBuffer
+        let image: CVMetalTexture
+    }
+
+    let queue = DispatchQueue(label: "com.example.SnipBeam.frames", qos: .userInteractive, autoreleaseFrequency: .workItem)
     private let layer: CAMetalLayer
     private let commands: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private let cache: CVMetalTextureCache
     private let gpuAvailable = DispatchSemaphore(value: 1)
+    private let pass = MTLRenderPassDescriptor()
     // Accessed only on queue. Keeping the CV objects alive prevents IOSurface reuse by SCK.
-    private var latest: (CVPixelBuffer, CVMetalTexture, MTLTexture)?
+    private var latest: CVPixelBuffer?
+    private var texture: (CVMetalTexture, MTLTexture)?
     private var needsDraw = false
     private var receivedFrames = 0
     private var presentedFrames = 0
@@ -29,6 +37,7 @@ final class FrameRenderer: @unchecked Sendable {
         queue.async {
             self.active = false
             self.latest = nil
+            self.texture = nil
             CVMetalTextureCacheFlush(self.cache, 0)
         }
     }
@@ -37,7 +46,8 @@ final class FrameRenderer: @unchecked Sendable {
         await withCheckedContinuation { continuation in
             queue.async {
                 continuation.resume(returning: (self.receivedFrames, self.presentedFrames, self.gpuFailures,
-                    CGSize(width: self.latest?.2.width ?? 0, height: self.latest?.2.height ?? 0), self.lastDrawableSize))
+                    self.latest.map { CGSize(width: CVPixelBufferGetWidth($0), height: CVPixelBufferGetHeight($0)) } ?? .zero,
+                    self.lastDrawableSize))
             }
         }
     }
@@ -74,20 +84,17 @@ final class FrameRenderer: @unchecked Sendable {
         descriptor.fragmentFunction = library.makeFunction(name: "previewFragment")
         descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
         pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1)
     }
 
     // ScreenCaptureKit calls this directly on queue; frames never hop through the main queue.
     func receive(_ pixels: CVPixelBuffer) {
         dispatchPrecondition(condition: .onQueue(queue))
         guard active else { return }
-        var image: CVMetalTexture?
-        guard CVMetalTextureCacheCreateTextureFromImage(nil, cache, pixels, nil, .bgra8Unorm,
-                CVPixelBufferGetWidth(pixels), CVPixelBufferGetHeight(pixels), 0, &image) == kCVReturnSuccess,
-              let image, let texture = CVMetalTextureGetTexture(image) else {
-            fail("Metal could not map a captured frame. Close the preview and select the region again.")
-            return
-        }
-        latest = (pixels, image, texture)
+        latest = pixels
+        texture = nil
         receivedFrames += 1
         needsDraw = true
         draw()
@@ -106,26 +113,38 @@ final class FrameRenderer: @unchecked Sendable {
             gpuAvailable.signal()
             return
         }
-        let pass = MTLRenderPassDescriptor()
+        // Map only the newest frame when a drawable and GPU slot are available; dropped frames cost no texture work.
+        if texture == nil {
+            var image: CVMetalTexture?
+            guard CVMetalTextureCacheCreateTextureFromImage(nil, cache, latest, nil, .bgra8Unorm,
+                    CVPixelBufferGetWidth(latest), CVPixelBufferGetHeight(latest), 0, &image) == kCVReturnSuccess,
+                  let image, let metalTexture = CVMetalTextureGetTexture(image) else {
+                gpuAvailable.signal()
+                fail("Metal could not map a captured frame. Close the preview and select the region again.")
+                return
+            }
+            texture = (image, metalTexture)
+        }
+        guard let texture else { gpuAvailable.signal(); return }
         pass.colorAttachments[0].texture = drawable.texture
-        pass.colorAttachments[0].loadAction = .clear
-        pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1)
+        // The encoder retains the target; don't hold a drawable's texture between frames.
+        defer { pass.colorAttachments[0].texture = nil }
         guard let encoder = command.makeRenderCommandEncoder(descriptor: pass) else {
             gpuAvailable.signal()
             return
         }
         lastDrawableSize = CGSize(width: drawable.texture.width, height: drawable.texture.height)
-        encoder.setViewport(Self.viewport(imageSize: CGSize(width: latest.2.width, height: latest.2.height),
+        encoder.setViewport(Self.viewport(imageSize: CGSize(width: texture.1.width, height: texture.1.height),
                                           drawableSize: lastDrawableSize))
         encoder.setRenderPipelineState(pipeline)
-        encoder.setFragmentTexture(latest.2, index: 0)
+        encoder.setFragmentTexture(texture.1, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
         needsDraw = false
         command.present(drawable)
+        let inFlight = InFlightFrame(pixels: latest, image: texture.0)
         command.addCompletedHandler { [weak self, gpuAvailable] command in
-            withExtendedLifetime(latest) {}
+            withExtendedLifetime(inFlight) {}
             gpuAvailable.signal()
             let failed = command.status == .error
             self?.queue.async { [weak self] in

@@ -3,6 +3,11 @@ import ScreenCaptureKit
 
 @MainActor
 final class ScreenCaptureManager: NSObject, SCStreamDelegate {
+    // Only pointer equality crosses queues. Retaining the object prevents address reuse before the check.
+    private struct StreamIdentity: @unchecked Sendable {
+        let stream: SCStream
+    }
+
     private var stream: SCStream?
     private var receiver: FrameReceiver?
     private var isRunning = false
@@ -15,18 +20,20 @@ final class ScreenCaptureManager: NSObject, SCStreamDelegate {
     func start(region: CaptureRegion, content: SCShareableContent,
                renderer: FrameRenderer, showsCursor: Bool) async throws {
         guard stream == nil else { throw CaptureError.message("Capture is already running. Close the preview and retry.") }
-        guard CGDisplayIsActive(region.display.displayID) != 0,
-              region.rectInDisplayPoints.width >= CoordinateConverter.minimumSelectionSize,
-              region.rectInDisplayPoints.height >= CoordinateConverter.minimumSelectionSize else {
+        guard let display = content.displays.first(where: { $0.displayID == region.display.displayID }),
+              display.frame == region.display.frame else {
             throw CaptureError.message("The selected display or region is no longer available. Select Region again.")
         }
         let ownApps = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
         guard !ownApps.isEmpty else {
             throw CaptureError.message("SnipBeam could not exclude its own windows. Quit and reopen the app, then retry.")
         }
-        let filter = SCContentFilter(display: region.display, excludingApplications: ownApps, exceptingWindows: [])
+        let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+        guard CGFloat(filter.pointPixelScale) == region.pixelScale else {
+            throw CaptureError.message("The display scale changed. Select Region again.")
+        }
         let receiver = FrameReceiver(renderer: renderer)
-        let stream = SCStream(filter: filter, configuration: configuration(region, showsCursor: showsCursor), delegate: self)
+        let stream = try SCStream(filter: filter, configuration: configuration(region, showsCursor: showsCursor), delegate: self)
         try stream.addStreamOutput(receiver, type: .screen, sampleHandlerQueue: renderer.queue)
         self.receiver = receiver
         self.stream = stream
@@ -63,7 +70,8 @@ final class ScreenCaptureManager: NSObject, SCStreamDelegate {
         isRunning = false
     }
 
-    func resume() async throws {
+    func resume(region: CaptureRegion) async throws {
+        try validate(region)
         guard let stream, !isRunning else {
             throw CaptureError.message("The paused stream is no longer available. Select Region again.")
         }
@@ -85,7 +93,17 @@ final class ScreenCaptureManager: NSObject, SCStreamDelegate {
         try await stream.updateConfiguration(configuration(region, showsCursor: showsCursor))
     }
 
-    private func configuration(_ region: CaptureRegion, showsCursor: Bool) -> SCStreamConfiguration {
+    private func validate(_ region: CaptureRegion) throws {
+        guard CGDisplayIsActive(region.display.displayID) != 0,
+              CGDisplayBounds(region.display.displayID) == region.display.frame,
+              CoordinateConverter.isValidCaptureRect(region.rectInDisplayPoints, displaySize: region.display.frame.size,
+                                                       pixelScale: region.pixelScale) else {
+            throw CaptureError.message("The selected display or crop is no longer valid. Select Region again.")
+        }
+    }
+
+    private func configuration(_ region: CaptureRegion, showsCursor: Bool) throws -> SCStreamConfiguration {
+        try validate(region)
         let config = SCStreamConfiguration()
         config.sourceRect = region.rectInDisplayPoints
         config.width = region.pixelWidth
@@ -100,8 +118,9 @@ final class ScreenCaptureManager: NSObject, SCStreamDelegate {
     }
 
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
+        let stopped = StreamIdentity(stream: stream)
         Task { @MainActor [weak self] in
-            guard let self, self.stream === stream else { return }
+            guard let self, self.stream === stopped.stream else { return }
             self.stream = nil
             self.isRunning = false
             self.receiver?.setEnabled(false)
