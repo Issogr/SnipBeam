@@ -1,0 +1,85 @@
+name: Publish Update
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish macOS app
+    runs-on: macos-15
+    timeout-minutes: 30
+    concurrency:
+      group: publish-update
+      cancel-in-progress: false
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare release since the last publication
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$current_sha" != "$GITHUB_SHA" ]]; then
+            echo "A newer push supersedes this run; its release will include these commits."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          previous_tag=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases \
+            --limit 1 --json tagName --jq '.[0].tagName // ""')
+          python3 -B scripts/release-notes.py --base "$previous_tag" --ref "$GITHUB_SHA" --write
+
+      - name: Validate
+        if: steps.release.outputs.publish == 'true'
+        run: |
+          swift build -Xswiftc -strict-concurrency=complete
+          ./scripts/check.sh
+          python3 -B scripts/test-release-notes.py
+
+      - name: Build and verify Apple Silicon app package
+        if: steps.release.outputs.publish == 'true'
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./scripts/package-app.sh
+
+      - name: Publish GitHub release with app and checksum
+        if: steps.release.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_TITLE: ${{ steps.release.outputs.title }}
+          RELEASE_NOTES_FILE: ${{ steps.release.outputs.notes_file }}
+        run: |
+          current_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$current_sha" != "$GITHUB_SHA" ]]; then
+            echo "A newer push supersedes this package; the next release will include these commits."
+            exit 0
+          fi
+
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .draft")
+          if [[ "$existing" == false ]]; then
+            echo "This commit has already been published."
+            exit 0
+          fi
+          if [[ -z "$existing" ]]; then
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --draft \
+              --title "$RELEASE_TITLE" --notes-file "$RELEASE_NOTES_FILE"
+          fi
+          # Keep incomplete uploads private; a retry replaces assets in the same draft.
+          gh release upload "$RELEASE_TAG" build/SnipBeam-macos-arm64.zip \
+            build/SnipBeam-macos-arm64.zip.sha256 --clobber
+          gh release edit "$RELEASE_TAG" --target "$GITHUB_SHA" --draft=false --latest \
+            --title "$RELEASE_TITLE" --notes-file "$RELEASE_NOTES_FILE"
