@@ -10,6 +10,28 @@ SnipBeam works entirely locally. It does not record, save, or upload captured fr
 
 Requires an **Apple Silicon Mac running macOS 14 Sonoma or later**.
 
+### Homebrew
+
+With [Homebrew](https://brew.sh) installed:
+
+```bash
+brew tap issogr/snipbeam https://github.com/Issogr/SnipBeam
+brew install --cask issogr/snipbeam/snipbeam
+```
+
+This repository is also the tap; the explicit URL is needed because it is named `SnipBeam`, not `homebrew-snipbeam`. If you previously installed the app manually, quit it and move that copy out of Applications before the first Homebrew installation.
+
+To update, quit SnipBeam, then run:
+
+```bash
+brew update
+brew upgrade --cask snipbeam
+```
+
+Open **SnipBeam** from Applications after installing or updating. Homebrew checks the release's SHA-256 checksum; it does not grant macOS trust or Screen Recording permission. The current builds are **ad-hoc signed, not notarized**, so the first-launch steps below still apply.
+
+### Manual download
+
 1. Download **SnipBeam-macos-arm64.zip** from [GitHub Releases](https://github.com/Issogr/SnipBeam/releases). Choose the app ZIP under **Assets**, not the source-code archive.
 2. Unzip it and move **SnipBeam.app** to **Applications**.
 3. Open SnipBeam and look for the viewfinder icon in the menu bar.
@@ -124,7 +146,15 @@ For changes to packaging tooling, run its offline checks with Python 3:
 
 ```bash
 python3 -B scripts/test-release-notes.py
+python3 -B scripts/test-homebrew-cask.py
+ruby -c Casks/snipbeam.rb
 ```
+
+### Homebrew releases
+
+The release workflow updates `Casks/snipbeam.rb` in this repository after publishing the app ZIP. It reads the app version and build number from the published ZIP and pins that exact release URL and checksum. The build number makes every published update visible to `brew upgrade`, even when the app's marketing version stays the same.
+
+The workflow uses its existing `GITHUB_TOKEN` with `contents: write` to push a cask-only commit to `main`; no extra repository or token is needed. Repository rules must allow that workflow push. Cask-only changes do not trigger app releases and are omitted from release notes. If the cask update fails after publication, rerun the workflow; it can update the cask without rebuilding the already-published app. Pull the generated commit before pushing your next local change.
 
 ### Signing
 

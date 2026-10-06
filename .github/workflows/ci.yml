@@ -23,5 +23,7 @@ jobs:
           swift build -Xswiftc -strict-concurrency=complete
           ./scripts/check.sh
           python3 -B scripts/test-release-notes.py
+          python3 -B scripts/test-homebrew-cask.py
+          ruby -c Casks/snipbeam.rb
       - name: Build and verify Apple Silicon app package
         run: ./scripts/package-app.sh

@@ -77,6 +77,20 @@ class ReleaseNotesTests(unittest.TestCase):
         subprocess.run([sys.executable, str(SCRIPT), "--base", "HEAD", "--write"], cwd=self.cwd, env=env, check=True, stdout=subprocess.PIPE)
         self.assertEqual(output.read_text(), "publish=false\n")
 
+    def test_cask_updates_do_not_become_app_releases(self):
+        base = self.commit("Published app")
+        (self.cwd / "Casks").mkdir()
+        (self.cwd / "Casks" / "snipbeam.rb").write_text("cask metadata")
+        self.git("add", "Casks")
+        self.git("-c", "user.name=Release Test", "-c", "user.email=release@example.invalid",
+                 "-c", "commit.gpgsign=false", "commit", "-qm", "Update SnipBeam Homebrew cask")
+        self.assertIsNone(self.notes(base=base))
+        self.commit("New app feature")
+        notes = self.notes(base=base)["notes"]
+        self.assertIn("New app feature", notes)
+        self.assertNotIn("Update SnipBeam Homebrew cask", notes)
+        self.assertIn("brew install --cask issogr/snipbeam/snipbeam", notes)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,7 @@ name: Publish Update
 on:
   push:
     branches: [main]
+    paths-ignore: ["Casks/**"]
 
 permissions:
   contents: read
@@ -47,6 +48,8 @@ jobs:
           swift build -Xswiftc -strict-concurrency=complete
           ./scripts/check.sh
           python3 -B scripts/test-release-notes.py
+          python3 -B scripts/test-homebrew-cask.py
+          ruby -c Casks/snipbeam.rb
 
       - name: Build and verify Apple Silicon app package
         if: steps.release.outputs.publish == 'true'
@@ -83,3 +86,36 @@ jobs:
             build/SnipBeam-macos-arm64.zip.sha256 --clobber
           gh release edit "$RELEASE_TAG" --target "$GITHUB_SHA" --draft=false --latest \
             --title "$RELEASE_TITLE" --notes-file "$RELEASE_NOTES_FILE"
+
+      # Also runs on retries after the release was published but the cask update failed.
+      - name: Update Homebrew cask from the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$current_sha" != "$GITHUB_SHA" ]]; then
+            echo "A newer push will update the cask after its release."
+            exit 0
+          fi
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')
+          if [[ "$tag" != "update-$GITHUB_SHA" ]]; then
+            echo "This commit has no published release to distribute."
+            exit 0
+          fi
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern SnipBeam-macos-arm64.zip \
+            --dir "$RUNNER_TEMP/homebrew" --clobber
+          python3 -B scripts/update-homebrew-cask.py "$tag" "$RUNNER_TEMP/homebrew/SnipBeam-macos-arm64.zip"
+          ruby -c Casks/snipbeam.rb
+          if git diff --quiet -- Casks/snipbeam.rb; then
+            exit 0
+          fi
+          git add Casks/snipbeam.rb
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Update SnipBeam Homebrew cask"
+          if ! git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin HEAD:main; then
+            current_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+            if [[ "$current_sha" == "$GITHUB_SHA" ]]; then
+              exit 1
+            fi
+            echo "A newer push won the race; its release will update the cask."
+          fi

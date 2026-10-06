@@ -35,19 +35,25 @@ def get_release_notes(base="", ref="HEAD", repository="Issogr/SnipBeam", cwd=Non
         raise ValueError("Release tag points to another commit: " + tag)
 
     url = "https://github.com/" + repository
-    fields = git("log", "--reverse", "-z", "--format=%H%x00%s", previous + ".." + sha if previous else sha, "--").split("\0")
+    fields = git("log", "--reverse", "-z", "--format=%H%x00%s", previous + ".." + sha if previous else sha,
+                 "--", ".", ":(exclude)Casks").split("\0")
     commits = []
     for index in range(0, len(fields) - 1, 2):
         subject = " ".join(fields[index + 1].split()) or "(no subject)"
         subject = re.sub(r"([\\`*_{}\[\]()<>#!|@])", r"\\\1", subject)
         commit = fields[index]
         commits.append(f"- {subject} ([{commit[:7]}]({url}/commit/{commit}))")
+    if not commits:
+        return None
     comparison = f"{url}/compare/{previous}...{sha}" if previous else f"{url}/commits/{sha}"
     return {
         "tag": tag,
         "title": f"SnipBeam — {datetime.now(timezone.utc).date().isoformat()} ({sha[:7]})",
         "notes": "## Download\n\nDownload `SnipBeam-macos-arm64.zip`, unzip it, and move `SnipBeam.app` to Applications. "
                  "Requires macOS 14+ on Apple Silicon (arm64).\n\n"
+                 "Or install with Homebrew:\n\n```bash\nbrew tap issogr/snipbeam https://github.com/Issogr/SnipBeam\n"
+                 "brew install --cask issogr/snipbeam/snipbeam\n```\n\n"
+                 "Update with `brew update` followed by `brew upgrade --cask snipbeam`.\n\n"
                  "This build is ad-hoc signed, sandboxed, and not notarized. If macOS blocks it, use "
                  "System Settings → Privacy & Security → Open Anyway after attempting to open the app. "
                  "Screen Recording permission is requested when selecting a region.\n\n"
