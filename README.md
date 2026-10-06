@@ -19,12 +19,14 @@ brew install --cask issogr/snipbeam/snipbeam
 
 Switching from a manual installation? Quit SnipBeam and move that copy out of Applications before installing with Homebrew.
 
-To update, quit SnipBeam, then run:
+To update, leave SnipBeam running if you want it to reopen automatically:
 
 ```bash
 brew update
 brew upgrade --cask snipbeam
 ```
+
+Current Homebrew versions quit the running app and reopen it after a successful upgrade. Choose **Select Region…** again to resume sharing.
 
 Open **SnipBeam** from Applications. See [First launch](#first-launch) if macOS blocks it.
 
@@ -70,6 +72,7 @@ The preview shows a fixed desktop area. Move other windows into that area to cha
 | Show Cursor | Shows or hides the pointer in new frames. |
 | Hide Title Bar | Hides the title and window buttons. Drag the image to move; uncheck to restore controls. |
 | Select Region… again | Replaces the current capture with a new selection. |
+| About SnipBeam | Shows the app icon, version, author, and links to GitHub and the MIT license. |
 
 Keep the preview open and unminimized while sharing. Compatibility varies by conferencing app, which may need its own Screen Recording permission.
 

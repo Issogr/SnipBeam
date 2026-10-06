@@ -25,6 +25,7 @@ final class MenuBarController: NSObject {
             menu.addItem(item)
         }
         menu.addItem(.separator())
+        menu.addItem(withTitle: "About SnipBeam", action: #selector(showAbout), keyEquivalent: "").target = self
         let quit = menu.addItem(withTitle: "Quit SnipBeam", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
         statusItem.menu = menu
@@ -33,6 +34,8 @@ final class MenuBarController: NSObject {
         let mainMenu = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu(title: "SnipBeam")
+        appMenu.addItem(withTitle: "About SnipBeam", action: #selector(showAbout), keyEquivalent: "").target = self
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit SnipBeam", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
@@ -55,4 +58,9 @@ final class MenuBarController: NSObject {
     @objc private func stopSharing() { onStop?() }
     @objc private func toggleCursor() { onCursor?() }
     @objc private func toggleTitleBar() { onTitleBar?() }
+
+    @objc private func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(nil)
+    }
 }
