@@ -23,6 +23,20 @@ final class PreviewWindowController: NSWindowController, NSWindowDelegate {
     }
 
     required init?(coder: NSCoder) { nil }
+
+    func setTitleBarHidden(_ hidden: Bool) {
+        guard let window else { return }
+        window.titleVisibility = hidden ? .hidden : .visible
+        window.titlebarAppearsTransparent = hidden
+        // Keep the titled window discoverable by conferencing apps while the preview fills its frame.
+        if hidden { window.styleMask.insert(.fullSizeContentView) }
+        else { window.styleMask.remove(.fullSizeContentView) }
+        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            window.standardWindowButton(button)?.isHidden = hidden
+        }
+        window.isMovableByWindowBackground = hidden
+    }
+
     func setPaused(_ paused: Bool) { window?.subtitle = paused ? "Paused" : "" }
     func windowWillClose(_ notification: Notification) {
         preview.renderer?.deactivate()

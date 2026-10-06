@@ -35,7 +35,9 @@ The preview shows a fixed area of your desktop. Move other windows underneath th
 | --- | --- |
 | Resize the preview | Scales the image without changing the captured region. |
 | Pause / Resume | Freezes the last frame, then resumes the same region. |
+| Stop Sharing | Stops active or paused capture and closes the preview, including when its title bar is hidden. SnipBeam stays available in the menu bar. |
 | Show Cursor | Includes or hides the pointer in new frames. |
+| Hide Title Bar | Hides the preview's title and window buttons, leaving only the image. Drag the image to move the window; uncheck this menu-bar option to restore the buttons. |
 | Close the preview | Stops capture while keeping the menu-bar app available. |
 | Select Region… again | Ends the previous capture and starts a new selection. |
 

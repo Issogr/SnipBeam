@@ -52,6 +52,14 @@ enum CaptureSmokeTest {
                             "No frames reached the Metal drawable, or the GPU reported an error.")
                 try require(initial.size == CGSize(width: region.pixelWidth, height: region.pixelHeight), "Capture pixel size does not match the selected region.")
                 if profiling { try await ResourceMeasurement.measure("capturing", renderer: renderer) }
+                let window = preview.window!
+                let windowNumber = window.windowNumber
+                let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+                app.menuBar?.onTitleBar?()
+                try require(window.titleVisibility == .hidden && window.titlebarAppearsTransparent &&
+                            buttons.allSatisfy { window.standardWindowButton($0)?.isHidden == true } &&
+                            preview.preview.frame.size == window.frame.size && preview.preview.mouseDownCanMoveWindow,
+                            "Hide Title Bar did not produce a draggable, full-window preview without controls.")
                 let windows = try await ScreenCaptureManager.content().windows
                 try require(windows.contains { $0.windowID == CGWindowID(preview.window!.windowNumber) && $0.title == "SnipBeam" && $0.windowLayer == 0 },
                             "SnipBeam was not discoverable as a normal shareable window.")
@@ -71,6 +79,14 @@ enum CaptureSmokeTest {
                 try require(resized.presented > paused.presented && resized.drawableSize == preview.preview.drawableSize,
                             "Paused preview did not redraw at the new drawable size: presented \(paused.presented) → \(resized.presented), drawn \(resized.drawableSize), expected \(preview.preview.drawableSize).")
                 if profiling { try await ResourceMeasurement.measure("paused", renderer: renderer) }
+
+                app.menuBar?.onTitleBar?()
+                try require(window.titleVisibility == .visible && !window.titlebarAppearsTransparent &&
+                            !window.styleMask.contains(.fullSizeContentView) &&
+                            buttons.allSatisfy { window.standardWindowButton($0)?.isHidden == false } &&
+                            preview.preview.frame.height < window.frame.height && window.subtitle == "Paused" &&
+                            window.windowNumber == windowNumber,
+                            "Restoring the title bar did not restore controls on the same paused preview.")
 
                 app.menuBar?.onPause?()
                 try await wait(app)
@@ -92,6 +108,7 @@ enum CaptureSmokeTest {
                     try await ResourceMeasurement.measure("minimized preview", renderer: renderer)
                     preview.window?.deminiaturize(nil)
                 }
+                app.menuBar?.onTitleBar?()
                 preview.window?.performClose(nil)
                 try await wait(app)
                 try require(app.state.region == nil && app.preview == nil, "Closing the preview did not stop capture.")
@@ -99,7 +116,32 @@ enum CaptureSmokeTest {
                 try await Task.sleep(for: .milliseconds(200))
                 let stopped = await renderer.statistics()
                 try require(closed.received == stopped.received, "Frames kept arriving after preview close.")
-                print("PASS: display \(region.display.displayID), scale \(region.pixelScale), \(resumed.size), \(resumed.received) frames, \(resumed.presented) presentations; selection/Escape, shareable window, resize, pause/resume, cursor updates, close")
+                print("PASS: display \(region.display.displayID), scale \(region.pixelScale), \(resumed.size), \(resumed.received) frames, \(resumed.presented) presentations; selection/Escape, shareable window, title-bar toggle, resize, pause/resume, cursor updates, close")
+
+                for pauseBeforeStop in [false, true] {
+                    app.menuBar?.onSelect?()
+                    try await wait(app)
+                    try select(on: screen)
+                    try await wait(app)
+                    guard let stopPreview = app.preview, let stopRenderer = stopPreview.preview.renderer else {
+                        throw CaptureError.message("Stop Sharing check did not start capture.")
+                    }
+                    if pauseBeforeStop {
+                        app.menuBar?.onPause?()
+                        try await wait(app)
+                        try require(app.state.isPaused, "Stop Sharing check did not pause capture.")
+                    }
+                    app.menuBar?.onStop?()
+                    try require(app.preview == nil && stopPreview.window?.isVisible == false,
+                                "Stop Sharing did not immediately close the preview.")
+                    try await wait(app)
+                    try require(app.state.region == nil && !app.state.isSelecting, "Stop Sharing did not return to idle.")
+                    let stopped = await stopRenderer.statistics()
+                    try await Task.sleep(for: .milliseconds(200))
+                    let later = await stopRenderer.statistics()
+                    try require(later.received == stopped.received, "Frames kept arriving after Stop Sharing.")
+                }
+                print("PASS: Stop Sharing closes active and paused previews with hidden title bars")
 
                 // These notifications are process-local; the test does not put the Mac to sleep or switch users.
                 for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification,
@@ -109,11 +151,14 @@ enum CaptureSmokeTest {
                     try select(on: screen)
                     try await wait(app)
                     try require(app.state.region != nil, "Session-stop check did not start capture.")
+                    try require(app.preview?.window?.titleVisibility == .hidden,
+                                "New preview did not retain the hidden title-bar preference.")
                     NSWorkspace.shared.notificationCenter.post(name: name, object: NSWorkspace.shared)
                     try await wait(app)
                     try require(app.state.region == nil && app.preview == nil, "Sleep/session change did not end capture.")
                 }
                 print("PASS: sleep and session-switch notifications end capture")
+                app.menuBar?.onTitleBar?()
             }
             if profiling { try await ResourceMeasurement.measure("after close") }
             print("Capture smoke check completed.")

@@ -9,6 +9,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let capture = ScreenCaptureManager()
     private(set) var state: CaptureState = .idle { didSet { updateMenu() } }
     private var showsCursor = true { didSet { updateMenu() } }
+    private var hidesTitleBar = false {
+        didSet {
+            preview?.setTitleBarHidden(hidesTitleBar)
+            updateMenu()
+        }
+    }
     private(set) var busy = false { didSet { updateMenu() } }
     private var operation: Task<Void, Never>?
     private var generation = 0
@@ -17,7 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menuBar = MenuBarController()
         menuBar.onSelect = { [weak self] in self?.selectRegion() }
         menuBar.onPause = { [weak self] in self?.togglePause() }
+        menuBar.onStop = { [weak self] in self?.stopCapture() }
         menuBar.onCursor = { [weak self] in self?.toggleCursor() }
+        menuBar.onTitleBar = { [weak self] in self?.hidesTitleBar.toggle() }
         self.menuBar = menuBar
         capture.onError = { [weak self] error in self?.stopCapture(error: error) }
         updateMenu()
@@ -54,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startCapture(_ region: CaptureRegion) {
         perform { [self] in
             let preview = try PreviewWindowController(size: region.rectInDisplayPoints.size)
+            preview.setTitleBarHidden(hidesTitleBar)
             guard let renderer = preview.preview.renderer else {
                 throw CaptureError.message("The Metal preview is unavailable. Reopen SnipBeam to retry.")
             }
@@ -159,7 +168,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stopCapture()
     }
 
-    private func updateMenu() { menuBar?.update(state: state, busy: busy, showsCursor: showsCursor) }
+    private func updateMenu() {
+        menuBar?.update(state: state, busy: busy, showsCursor: showsCursor, hidesTitleBar: hidesTitleBar)
+    }
 
     private func showError(_ error: Error) {
         NSApp.activate(ignoringOtherApps: true)

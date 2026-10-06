@@ -27,6 +27,7 @@ final class MetalPreviewView: MTKView, MTKViewDelegate {
 
     @available(*, unavailable, message: "Use init(previewSize:); SnipBeam has no nibs or storyboards.")
     required init(coder: NSCoder) { super.init(coder: coder) }
+    override var mouseDownCanMoveWindow: Bool { window?.isMovableByWindowBackground ?? false }
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         // MTKView calls this before updating its layer. Publish the size before off-main drawing,
         // including while paused, when no subsequent capture frame would otherwise repair the resize.
