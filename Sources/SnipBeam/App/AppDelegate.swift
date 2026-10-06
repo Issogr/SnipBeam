@@ -8,9 +8,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var selection: SelectionWindowController?
     private let capture = ScreenCaptureManager()
     private(set) var state: CaptureState = .idle { didSet { updateMenu() } }
-    private var showsCursor = true { didSet { updateMenu() } }
-    private var hidesTitleBar = false {
+    private var showsCursor = UserDefaults.standard.object(forKey: "showsCursor") as? Bool ?? true {
         didSet {
+            UserDefaults.standard.set(showsCursor, forKey: "showsCursor")
+            updateMenu()
+        }
+    }
+    private var hidesTitleBar = UserDefaults.standard.bool(forKey: "hidesTitleBar") {
+        didSet {
+            UserDefaults.standard.set(hidesTitleBar, forKey: "hidesTitleBar")
             preview?.setTitleBarHidden(hidesTitleBar)
             updateMenu()
         }
@@ -183,7 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // ponytail: no saved state; normal process exit releases the capture session without a nested run loop.
+        // ponytail: normal process exit releases the capture session without a nested run loop.
         operation?.cancel()
         selection?.cancel()
     }

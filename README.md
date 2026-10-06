@@ -104,7 +104,7 @@ defaults read "/Applications/SnipBeam.app/Contents/Info" CFBundleIdentifier
 - One fixed region on one display at a time; no cross-monitor selection or automatic window tracking.
 - Display configuration changes, sleep, and user-session switching end capture. Select a region again when you return.
 - Protected/DRM content may appear blank. Output is SDR.
-- Preview size and menu preferences are not saved between launches.
+- Preview size is not saved between launches.
 
 ## Development
 

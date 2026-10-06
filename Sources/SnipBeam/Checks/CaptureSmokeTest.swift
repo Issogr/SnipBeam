@@ -14,6 +14,13 @@ enum CaptureSmokeTest {
             exit(1)
         }
         do {
+            let savedTitleBarPreference = UserDefaults.standard.object(forKey: "hidesTitleBar")
+            let savedCursorPreference = UserDefaults.standard.object(forKey: "showsCursor")
+            defer {
+                UserDefaults.standard.set(savedTitleBarPreference, forKey: "hidesTitleBar")
+                UserDefaults.standard.set(savedCursorPreference, forKey: "showsCursor")
+            }
+            if UserDefaults.standard.bool(forKey: "hidesTitleBar") { app.menuBar?.onTitleBar?() }
             guard let task = SecTaskCreateFromSelf(nil) else { throw CaptureError.message("Could not inspect code-signing entitlements.") }
             try require(SecTaskCopyValueForEntitlement(task, "com.apple.security.app-sandbox" as CFString, nil) as? Bool == true,
                         "The packaged app is not sandboxed.")
@@ -56,7 +63,8 @@ enum CaptureSmokeTest {
                 let windowNumber = window.windowNumber
                 let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
                 app.menuBar?.onTitleBar?()
-                try require(window.titleVisibility == .hidden && window.titlebarAppearsTransparent &&
+                try require(UserDefaults.standard.bool(forKey: "hidesTitleBar") &&
+                            window.titleVisibility == .hidden && window.titlebarAppearsTransparent &&
                             buttons.allSatisfy { window.standardWindowButton($0)?.isHidden == true } &&
                             preview.preview.frame.size == window.frame.size && preview.preview.mouseDownCanMoveWindow,
                             "Hide Title Bar did not produce a draggable, full-window preview without controls.")
@@ -81,7 +89,8 @@ enum CaptureSmokeTest {
                 if profiling { try await ResourceMeasurement.measure("paused", renderer: renderer) }
 
                 app.menuBar?.onTitleBar?()
-                try require(window.titleVisibility == .visible && !window.titlebarAppearsTransparent &&
+                try require(!UserDefaults.standard.bool(forKey: "hidesTitleBar") &&
+                            window.titleVisibility == .visible && !window.titlebarAppearsTransparent &&
                             !window.styleMask.contains(.fullSizeContentView) &&
                             buttons.allSatisfy { window.standardWindowButton($0)?.isHidden == false } &&
                             preview.preview.frame.height < window.frame.height && window.subtitle == "Paused" &&
@@ -162,11 +171,11 @@ enum CaptureSmokeTest {
             }
             if profiling { try await ResourceMeasurement.measure("after close") }
             print("Capture smoke check completed.")
-            NSApp.terminate(nil)
         } catch {
             print("FAIL: \(error.localizedDescription)")
             exit(1)
         }
+        NSApp.terminate(nil)
     }
 
     private static func wait(_ app: AppDelegate) async throws {
