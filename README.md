@@ -2,9 +2,7 @@
 
 A free, open-source macOS menu-bar app that turns a selected screen region into a normal window you can share in meetings.
 
-**Selected screen region → ScreenCaptureKit → Metal preview → shareable window.**
-
-SnipBeam works entirely locally. It does not record, save, or upload captured frames, and has no audio capture, accounts, or analytics. Your conferencing app handles sharing the preview with participants.
+Runs locally: no recording, saved frames, uploads, audio capture, accounts, or analytics. Your conferencing app handles sharing.
 
 ## Install
 
@@ -19,7 +17,7 @@ brew tap issogr/snipbeam https://github.com/Issogr/SnipBeam
 brew install --cask issogr/snipbeam/snipbeam
 ```
 
-This repository is also the tap; the explicit URL is needed because it is named `SnipBeam`, not `homebrew-snipbeam`. If you previously installed the app manually, quit it and move that copy out of Applications before the first Homebrew installation.
+Switching from a manual installation? Quit SnipBeam and move that copy out of Applications before installing with Homebrew.
 
 To update, quit SnipBeam, then run:
 
@@ -28,7 +26,7 @@ brew update
 brew upgrade --cask snipbeam
 ```
 
-Open **SnipBeam** from Applications after installing or updating. Homebrew checks the release's SHA-256 checksum; it does not grant macOS trust or Screen Recording permission. See [First launch](#first-launch) if macOS blocks the app.
+Open **SnipBeam** from Applications. See [First launch](#first-launch) if macOS blocks it.
 
 ### Manual download
 
@@ -36,9 +34,7 @@ Open **SnipBeam** from Applications after installing or updating. Homebrew check
 2. Unzip it and move **SnipBeam.app** to **Applications**.
 3. Open SnipBeam and look for the viewfinder icon in the menu bar.
 
-No developer tools are needed.
-
-To verify a download, place the ZIP and its `.sha256` file in the same directory and run:
+Optional: verify the download with the ZIP and its `.sha256` file in the same directory:
 
 ```bash
 shasum -a 256 -c SnipBeam-macos-arm64.zip.sha256
@@ -46,64 +42,62 @@ shasum -a 256 -c SnipBeam-macos-arm64.zip.sha256
 
 ### First launch
 
-Builds are currently **ad-hoc signed, not notarized**. If macOS blocks the app, [Apple's documented override](https://support.apple.com/en-us/102445) is to attempt to open it, then choose **System Settings → Privacy & Security → Open Anyway**.
+Builds are **ad-hoc signed, not notarized**, including Homebrew installs. If blocked, attempt to open the app, then choose **System Settings → Privacy & Security → Open Anyway** ([Apple's instructions](https://support.apple.com/en-us/102445)).
 
-For a build you trust, an optional Terminal alternative is to remove only SnipBeam's downloaded-file quarantine attribute:
+For a build you trust, you can instead remove its download-quarantine flag:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/SnipBeam.app"
 open "/Applications/SnipBeam.app"
 ```
 
-If `xattr` reports **Permission denied**, repeat the `xattr` command with `sudo`. Adjust the path if you installed the app elsewhere. This removes the quarantine flag for this copy of SnipBeam; it does not notarize the app or disable Gatekeeper globally. An update may require repeating it.
-
-Screen Recording approval is separate and still requires your interaction in System Settings.
+Use `sudo` only if `xattr` reports **Permission denied**; adjust the path for other install locations. This affects only this app copy and may need repeating after an update. [Screen Recording approval](#screen-recording-permission) is separate.
 
 ## Select and share
 
 1. Click the menu-bar icon and choose **Select Region…**.
 2. Grant Screen Recording permission when prompted.
 3. Drag a rectangle on one display, then release to confirm. **Escape** cancels; the minimum size is **20 × 20 points**.
-4. In Google Meet, Slack, Zoom, Teams, Discord, or another conferencing app, choose **Share a window**, then **SnipBeam**.
+4. In your conferencing app, choose **Share a window**, then **SnipBeam**.
 
-The preview shows a fixed area of your desktop. Move other windows underneath that area to change what appears. SnipBeam's own windows are excluded to prevent recursive previews.
+The preview shows a fixed desktop area. Move other windows into that area to change what appears. SnipBeam excludes its own windows to prevent recursion.
 
 | Control | Behavior |
 | --- | --- |
-| Resize the preview | Scales the image without changing the captured region. |
+| Resize the preview | Scales the image without changing the captured area. |
 | Pause / Resume | Freezes the last frame, then resumes the same region. |
-| Stop Sharing | Stops active or paused capture and closes the preview, including when its title bar is hidden. SnipBeam stays available in the menu bar. |
-| Show Cursor | Includes or hides the pointer in new frames. |
-| Hide Title Bar | Hides the preview's title and window buttons, leaving only the image. Drag the image to move the window; uncheck this menu-bar option to restore the buttons. |
-| Close the preview | Stops capture while keeping the menu-bar app available. |
-| Select Region… again | Ends the previous capture and starts a new selection. |
+| Stop Sharing / Close preview | Stops active or paused capture and closes the preview. SnipBeam stays in the menu bar. |
+| Show Cursor | Shows or hides the pointer in new frames. |
+| Hide Title Bar | Hides the title and window buttons. Drag the image to move; uncheck to restore controls. |
+| Select Region… again | Replaces the current capture with a new selection. |
 
-Keep the preview open and unminimized while sharing. Conferencing apps may need their own Screen Recording permission, and window-sharing behavior varies by client.
+Keep the preview open and unminimized while sharing. Compatibility varies by conferencing app, which may need its own Screen Recording permission.
 
 ## Screen Recording permission
 
-SnipBeam needs this macOS permission to display the selected region, even though it does not record anything.
+Enable **SnipBeam** in **System Settings → Privacy & Security → Screen Recording** (or **Screen & System Audio Recording**). If missing, add it with **+**.
 
-Open **System Settings → Privacy & Security → Screen Recording** (called **Screen & System Audio Recording** on some versions) and enable **SnipBeam**. If it is missing, add the app with the **+** button.
-
-Then choose **Select Region…** to retry. Quit and reopen SnipBeam if macOS requests it. Rebuilding or moving an ad-hoc-signed copy may require granting permission again. The audio wording in Settings does not mean SnipBeam captures audio.
+Choose **Select Region…** to retry; restart SnipBeam if macOS requests it. Rebuilding or moving an ad-hoc-signed copy may require approval again.
 
 ### Reset a stuck permission
 
-If capture still fails after enabling the permission, quit SnipBeam, then reset only its Screen Recording decision:
+If capture still fails, quit SnipBeam and reset its Screen Recording decision:
 
 ```bash
 tccutil reset ScreenCapture com.example.SnipBeam
 open "/Applications/SnipBeam.app"
 ```
 
-Choose **Select Region…** again and approve access when prompted or in System Settings. This reset clears the previous decision, including an existing approval; it does **not** grant access. `tccutil` has no command to grant Screen Recording permission on a normal, unmanaged Mac.
+This clears the previous decision, including any approval. Choose **Select Region…** and approve access again in the prompt or System Settings; `tccutil` cannot grant permission.
 
-The current bundle ID is `com.example.SnipBeam`. To check the installed app's ID:
+<details>
+<summary>Check the installed app's bundle ID</summary>
 
 ```bash
 defaults read "/Applications/SnipBeam.app/Contents/Info" CFBundleIdentifier
 ```
+
+</details>
 
 ## Limitations
 
@@ -114,49 +108,33 @@ defaults read "/Applications/SnipBeam.app/Contents/Info" CFBundleIdentifier
 
 ## Development
 
-Use **Swift 5.9+ and Apple's Command Line Tools** with any text editor. No Xcode project, Xcode application, or third-party Swift packages are required.
-
-Install the tools if needed:
+Use **Swift 5.9+ and Apple's Command Line Tools**; no Xcode or third-party packages are required. From the repository root:
 
 ```bash
-xcode-select --install
+xcode-select --install     # Install Command Line Tools if needed
+swift build                # Debug build
+./scripts/run.sh           # Build, package, sign, and launch
+./scripts/build-app.sh     # Release app without launching
+./scripts/package-app.sh   # Release ZIP and checksum
 ```
 
-From the repository root:
-
-```bash
-swift build             # Compile a debug build
-./scripts/run.sh        # Build, package, sign, and launch the app
-```
-
-The app is generated at `build/SnipBeam.app`. Quit an existing copy before rebuilding and relaunching, or macOS may reactivate the old process.
-
-- `./scripts/build-app.sh` builds the release app without launching it.
-- `./scripts/package-app.sh` creates `build/SnipBeam-macos-arm64.zip` and its checksum.
-- Packaged builds use App Sandbox and hardened runtime; the raw SwiftPM executable does not have those protections.
-
-### Code layout
-
-- `Sources/SnipBeam/App/` owns application state and lifecycle.
-- `Capture/`, `Selection/`, and `Preview/` under `Sources/SnipBeam/` contain the capture pipeline, selection overlays, and Metal rendering.
-- `Resources/` contains bundle metadata, entitlements, and the icon; edit these sources rather than the generated app.
-- `Tests/` and `Sources/SnipBeam/Checks/` contain geometry, integration, and performance checks.
+Packaged output is in `build/`, including `SnipBeam.app`. Quit any running copy before relaunching a rebuild. Packaged apps use App Sandbox and hardened runtime; the raw SwiftPM executable does not. Edit bundle resources in `Resources/`, not the generated app.
 
 ### Checks
 
-Run the geometry checks without Screen Recording permission:
+Run the relevant checks below. There is no `swift test` target.
 
 ```bash
-./scripts/check.sh
+./scripts/check.sh                                # Geometry; no Screen Recording permission needed
+swift build -Xswiftc -strict-concurrency=complete   # Concurrency changes
+
+# Packaging changes (Python 3 and Ruby)
+python3 -B scripts/test-release-notes.py
+python3 -B scripts/test-homebrew-cask.py
+ruby -c Casks/snipbeam.rb
 ```
 
-This project uses standalone assertions rather than a `swift test` target. For concurrency changes, also run:
-
-```bash
-swift build -Xswiftc -strict-concurrency=complete
-```
-
-For live capture checks, grant Screen Recording permission to the packaged app, quit any running copy, then run:
+For live checks, grant Screen Recording permission to the packaged app and quit any running copy:
 
 ```bash
 ./scripts/build-app.sh
@@ -164,39 +142,25 @@ SNIPBEAM_SANDBOX_PROBE="$PWD/Package.swift" \
   build/SnipBeam.app/Contents/MacOS/SnipBeam --smoke-test
 ```
 
-The check opens temporary previews and tests selection, rendering, controls, sandbox restrictions, and cleanup. It does not save frames or put the Mac to sleep. Sharing with participants still needs testing in your conferencing app.
+The smoke check tests capture, controls, sandbox restrictions, and cleanup without saving frames or sleeping the Mac. Test actual sharing in your conferencing app separately.
 
-To measure resource use on your Mac:
-
-```bash
-./scripts/measure.sh
-```
-
-Measurements cover SnipBeam's process, not total WindowServer, GPU, or conferencing costs. Larger regions cost more; select only what you need and pause when updates are unnecessary.
-
-For changes to packaging tooling, run its offline checks with Python 3:
-
-```bash
-python3 -B scripts/test-release-notes.py
-python3 -B scripts/test-homebrew-cask.py
-ruby -c Casks/snipbeam.rb
-```
+Run `./scripts/measure.sh` for CPU, memory, and frame-delivery measurements. These cover SnipBeam's process, not total WindowServer, GPU, or conferencing costs.
 
 ### Homebrew releases
 
-The release workflow updates `Casks/snipbeam.rb` in this repository after publishing the app ZIP. It reads the app version and build number from the published ZIP and pins that exact release URL and checksum. The build number makes every published update visible to `brew upgrade`, even when the app's marketing version stays the same.
-
-The workflow uses its existing `GITHUB_TOKEN` with `contents: write` to push a cask-only commit to `main`; no extra repository or token is needed. Repository rules must allow that workflow push. Cask-only changes do not trigger app releases and are omitted from release notes. If the cask update fails after publication, rerun the workflow; it can update the cask without rebuilding the already-published app. Pull the generated commit before pushing your next local change.
+- Each release updates `Casks/snipbeam.rb` with the published ZIP's version, build number, URL, and checksum. Build numbers let `brew upgrade` detect every release.
+- The workflow pushes to `main` using `GITHUB_TOKEN` with `contents: write`; repository rules must allow it. Cask-only commits do not trigger app releases or appear in release notes.
+- If the cask update fails, rerun the workflow. Pull its generated commit before your next push.
 
 ### Signing
 
-Local development uses ad-hoc signing and needs no Apple Developer account. To use a Developer ID certificate already installed in your keychain:
+Local builds use ad-hoc signing without an Apple Developer account. To use a Developer ID certificate from your keychain:
 
 ```bash
 SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/package-app.sh
 ```
 
-Trusted public distribution also requires [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution). Neither is required to build and run SnipBeam locally.
+Gatekeeper-trusted distribution also requires [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 
 ## License
 
