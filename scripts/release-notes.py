@@ -56,6 +56,7 @@ def get_release_notes(base="", ref="HEAD", repository="Issogr/SnipBeam", cwd=Non
                  "Update with `brew update` followed by `brew upgrade --cask snipbeam`.\n\n"
                  "This build is ad-hoc signed, sandboxed, and not notarized. If macOS blocks it, use "
                  "System Settings → Privacy & Security → Open Anyway after attempting to open the app. "
+                 f"For an app-specific Terminal alternative, see [First launch]({url}#first-launch). "
                  "Screen Recording permission is requested when selecting a region.\n\n"
                  "## Changes\n\n" + "\n".join(commits) + f"\n\n[Full changes]({comparison})\n",
     }

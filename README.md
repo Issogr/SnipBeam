@@ -28,7 +28,7 @@ brew update
 brew upgrade --cask snipbeam
 ```
 
-Open **SnipBeam** from Applications after installing or updating. Homebrew checks the release's SHA-256 checksum; it does not grant macOS trust or Screen Recording permission. The current builds are **ad-hoc signed, not notarized**, so the first-launch steps below still apply.
+Open **SnipBeam** from Applications after installing or updating. Homebrew checks the release's SHA-256 checksum; it does not grant macOS trust or Screen Recording permission. See [First launch](#first-launch) if macOS blocks the app.
 
 ### Manual download
 
@@ -36,13 +36,28 @@ Open **SnipBeam** from Applications after installing or updating. Homebrew check
 2. Unzip it and move **SnipBeam.app** to **Applications**.
 3. Open SnipBeam and look for the viewfinder icon in the menu bar.
 
-No developer tools are needed. Builds are currently **ad-hoc signed, not notarized**. If macOS blocks the first launch, attempt to open the app, then go to **System Settings → Privacy & Security → Open Anyway**.
+No developer tools are needed.
 
 To verify a download, place the ZIP and its `.sha256` file in the same directory and run:
 
 ```bash
 shasum -a 256 -c SnipBeam-macos-arm64.zip.sha256
 ```
+
+### First launch
+
+Builds are currently **ad-hoc signed, not notarized**. If macOS blocks the app, [Apple's documented override](https://support.apple.com/en-us/102445) is to attempt to open it, then choose **System Settings → Privacy & Security → Open Anyway**.
+
+For a build you trust, an optional Terminal alternative is to remove only SnipBeam's downloaded-file quarantine attribute:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/SnipBeam.app"
+open "/Applications/SnipBeam.app"
+```
+
+If `xattr` reports **Permission denied**, repeat the `xattr` command with `sudo`. Adjust the path if you installed the app elsewhere. This removes the quarantine flag for this copy of SnipBeam; it does not notarize the app or disable Gatekeeper globally. An update may require repeating it.
+
+Screen Recording approval is separate and still requires your interaction in System Settings.
 
 ## Select and share
 
@@ -72,6 +87,23 @@ SnipBeam needs this macOS permission to display the selected region, even though
 Open **System Settings → Privacy & Security → Screen Recording** (called **Screen & System Audio Recording** on some versions) and enable **SnipBeam**. If it is missing, add the app with the **+** button.
 
 Then choose **Select Region…** to retry. Quit and reopen SnipBeam if macOS requests it. Rebuilding or moving an ad-hoc-signed copy may require granting permission again. The audio wording in Settings does not mean SnipBeam captures audio.
+
+### Reset a stuck permission
+
+If capture still fails after enabling the permission, quit SnipBeam, then reset only its Screen Recording decision:
+
+```bash
+tccutil reset ScreenCapture com.example.SnipBeam
+open "/Applications/SnipBeam.app"
+```
+
+Choose **Select Region…** again and approve access when prompted or in System Settings. This reset clears the previous decision, including an existing approval; it does **not** grant access. `tccutil` has no command to grant Screen Recording permission on a normal, unmanaged Mac.
+
+The current bundle ID is `com.example.SnipBeam`. To check the installed app's ID:
+
+```bash
+defaults read "/Applications/SnipBeam.app/Contents/Info" CFBundleIdentifier
+```
 
 ## Limitations
 

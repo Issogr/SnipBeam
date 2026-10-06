@@ -16,6 +16,14 @@ cask "snipbeam" do
   caveats <<~EOS
     SnipBeam is ad-hoc signed and not notarized. If macOS blocks it, attempt
     to open the app, then choose Open Anyway in System Settings > Privacy & Security.
-    Screen Recording permission is requested when selecting a region.
+
+    For a build you trust, you can instead remove only SnipBeam's download quarantine:
+      xattr -dr com.apple.quarantine "#{appdir}/SnipBeam.app"
+      open "#{appdir}/SnipBeam.app"
+    If xattr reports Permission denied, repeat the xattr command with sudo.
+
+    Screen Recording still requires your approval in System Settings > Privacy & Security.
+    Choose Select Region… to request access. For permission troubleshooting, see:
+      https://github.com/Issogr/SnipBeam#screen-recording-permission
   EOS
 end
