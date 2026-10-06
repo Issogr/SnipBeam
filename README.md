@@ -77,6 +77,8 @@ Keep the preview open and unminimized while sharing. Compatibility varies by con
 
 Enable **SnipBeam** in **System Settings → Privacy & Security → Screen Recording** (or **Screen & System Audio Recording**). If missing, add it with **+**.
 
+**SnipBeam captures video only.** System audio capture is disabled, and microphone access is never requested. macOS bundles screen and audio permissions, so its prompt mentions both.
+
 Choose **Select Region…** to retry; restart SnipBeam if macOS requests it. Rebuilding or moving an ad-hoc-signed copy may require approval again.
 
 ### Reset a stuck permission
