@@ -1,8 +1,8 @@
 cask "snipbeam" do
-  version "0.1.0,7"
-  sha256 "6fdaec78731748e16f81f51430f28372cf83821b3bab60737187d3f41efd6150"
+  version "0.1.0,8"
+  sha256 "5697656f6aed9d7f8b08e3d16b2ce61492be1cfb5616772b0c62120523762ca9"
 
-  url "https://github.com/Issogr/SnipBeam/releases/download/update-c882f53ac2acde22889e9a0d19026cd56d8495a7/SnipBeam-macos-arm64.zip"
+  url "https://github.com/Issogr/SnipBeam/releases/download/update-295e107a6506d0e35a7bc0b154321e6485f5a157/SnipBeam-macos-arm64.zip"
   name "SnipBeam"
   desc "Share a selected screen region as a window"
   homepage "https://github.com/Issogr/SnipBeam"
