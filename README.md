@@ -62,7 +62,7 @@ Use `sudo` only if `xattr` reports **Permission denied**; adjust the path for ot
 3. Drag a rectangle on one display, then release to confirm. **Escape** cancels; the minimum size is **20 × 20 points**.
 4. In your conferencing app, choose **Share a window**, then **SnipBeam**.
 
-The preview shows a fixed desktop area. Move other windows into that area to change what appears. SnipBeam excludes its own windows to prevent recursion.
+The preview shows a fixed desktop area. Move other windows into that area to change what appears. SnipBeam excludes its own windows to prevent recursion. The macOS Dock process, which also owns the **⌘Tab app switcher**, is excluded automatically, independently of your Hidden Apps selections.
 
 | Control | Behavior |
 | --- | --- |
@@ -71,10 +71,13 @@ The preview shows a fixed desktop area. Move other windows into that area to cha
 | Stop Sharing / Close preview | Stops active or paused capture and closes the preview. SnipBeam stays in the menu bar. |
 | Show Cursor | Shows or hides the pointer in new frames. |
 | Hide Title Bar | Hides the title and window buttons. Drag the image to move; uncheck to restore controls. |
+| Hidden Apps… | Opens a checkbox list of running apps to exclude. Selections are saved and apply to the current capture; paused captures update when resumed. |
 | Select Region… again | Replaces the current capture with a new selection. |
 | About SnipBeam | Shows the app icon, version, author, and links to GitHub and the MIT license. |
 
 Keep the preview open and unminimized while sharing. Compatibility varies by conferencing app, which may need its own Screen Recording permission.
+
+Hidden apps remain visible and usable on your own screen. In the SnipBeam preview, their windows are omitted so the content behind them stays visible. Saved exclusions are reapplied when an app relaunches; capture freezes while its exclusion is refreshed and stops if the app cannot be excluded safely. Apps that have quit remain in the list so you can uncheck them. SnipBeam's own windows are always excluded.
 
 ## Screen Recording permission
 
@@ -130,7 +133,7 @@ Packaged output is in `build/`, including `SnipBeam.app`. Quit any running copy 
 Run the relevant checks below. There is no `swift test` target.
 
 ```bash
-./scripts/check.sh                                # Geometry; no Screen Recording permission needed
+./scripts/check.sh                                # Geometry and check isolation; no capture permission needed
 swift build -Xswiftc -strict-concurrency=complete   # Concurrency changes
 
 # Packaging changes (Python 3 and Ruby)
@@ -142,12 +145,12 @@ ruby -c Casks/snipbeam.rb
 For live checks, grant Screen Recording permission to the packaged app and quit any running copy:
 
 ```bash
-./scripts/build-app.sh
-SNIPBEAM_SANDBOX_PROBE="$PWD/Package.swift" \
-  build/SnipBeam.app/Contents/MacOS/SnipBeam --smoke-test
+python3 -B scripts/live-check.py
 ```
 
-The smoke check tests capture, controls, sandbox restrictions, and cleanup without saving frames or sleeping the Mac. Test actual sharing in your conferencing app separately.
+The runner builds the signed app and a separate visual fixture, then checks captured pixels before hiding the fixture, while hidden, and throughout its relaunch. It also tests controls, closing during startup, sandbox restrictions, and cleanup without saving frames or sleeping the Mac. Checks use isolated preferences, so even a timeout cannot change your saved exclusions. Deadlines scale with the number of displays. Test actual sharing in your conferencing app separately.
+
+To check Dock and app-switcher exclusion on your macOS version, select a region covering the Dock and the screen center. Reveal the Dock, then hold **⌘Tab**: both should remain visible on your desktop but absent from the SnipBeam preview. Repeat after changing Hidden Apps selections and after pausing/resuming capture.
 
 Run `./scripts/measure.sh` for CPU, memory, and frame-delivery measurements. These cover SnipBeam's process, not total WindowServer, GPU, or conferencing costs.
 

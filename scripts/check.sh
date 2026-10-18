@@ -8,3 +8,6 @@ swiftc Sources/SnipBeam/Capture/CaptureRegion.swift \
     Tests/CoordinateChecks.swift \
     -o build/coordinate-checks
 build/coordinate-checks
+swiftc Sources/SnipBeam/Checks/CaptureCheckSettings.swift Tests/CheckSettingsChecks.swift \
+    -o build/check-settings-checks
+build/check-settings-checks

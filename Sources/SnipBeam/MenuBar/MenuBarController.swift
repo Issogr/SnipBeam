@@ -7,12 +7,14 @@ final class MenuBarController: NSObject {
     var onStop: (() -> Void)?
     var onCursor: (() -> Void)?
     var onTitleBar: (() -> Void)?
+    var onHiddenApps: (() -> Void)?
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let selectItem = NSMenuItem(title: "Select Region…", action: #selector(selectRegion), keyEquivalent: "s")
     private let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause), keyEquivalent: "p")
     private let stopItem = NSMenuItem(title: "Stop Sharing", action: #selector(stopSharing), keyEquivalent: "")
     private let cursorItem = NSMenuItem(title: "Show Cursor", action: #selector(toggleCursor), keyEquivalent: "")
     private let titleBarItem = NSMenuItem(title: "Hide Title Bar", action: #selector(toggleTitleBar), keyEquivalent: "")
+    private let hiddenAppsItem = NSMenuItem(title: "Hidden Apps…", action: #selector(showHiddenApps), keyEquivalent: "")
 
     override init() {
         super.init()
@@ -20,7 +22,7 @@ final class MenuBarController: NSObject {
         statusItem.button?.toolTip = "SnipBeam — share a screen region"
         let menu = NSMenu()
         menu.autoenablesItems = false
-        for item in [selectItem, pauseItem, stopItem, cursorItem, titleBarItem] {
+        for item in [selectItem, pauseItem, stopItem, cursorItem, titleBarItem, hiddenAppsItem] {
             item.target = self
             menu.addItem(item)
         }
@@ -51,6 +53,7 @@ final class MenuBarController: NSObject {
         cursorItem.isEnabled = !busy && !state.isSelecting
         titleBarItem.state = hidesTitleBar ? .on : .off
         titleBarItem.isEnabled = !busy && !state.isSelecting
+        hiddenAppsItem.isEnabled = !busy && !state.isSelecting
     }
 
     @objc private func selectRegion() { onSelect?() }
@@ -58,6 +61,7 @@ final class MenuBarController: NSObject {
     @objc private func stopSharing() { onStop?() }
     @objc private func toggleCursor() { onCursor?() }
     @objc private func toggleTitleBar() { onTitleBar?() }
+    @objc private func showHiddenApps() { onHiddenApps?() }
 
     @objc private func showAbout() {
         NSApp.activate(ignoringOtherApps: true)

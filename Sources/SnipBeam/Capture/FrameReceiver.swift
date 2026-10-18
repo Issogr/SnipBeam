@@ -1,22 +1,29 @@
 import CoreMedia
 import ScreenCaptureKit
+import os
 
-// enabled is only read/written on renderer.queue, the SCStream sample handler queue.
+// Close the gate immediately, even when capture callbacks are already queued.
 final class FrameReceiver: NSObject, SCStreamOutput, @unchecked Sendable {
     private let renderer: FrameRenderer
-    private var enabled = true
+    private let enabled = OSAllocatedUnfairLock(initialState: false)
 
     init(renderer: FrameRenderer) {
         self.renderer = renderer
     }
 
     func setEnabled(_ enabled: Bool) {
-        renderer.queue.async { self.enabled = enabled }
+        self.enabled.withLock { $0 = enabled }
+    }
+
+    func drain() async {
+        await withCheckedContinuation { continuation in
+            renderer.queue.async { continuation.resume() }
+        }
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
                 of outputType: SCStreamOutputType) {
-        guard enabled, outputType == .screen, sampleBuffer.isValid,
+        guard enabled.withLock({ $0 }), outputType == .screen, sampleBuffer.isValid,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(
                 sampleBuffer, createIfNecessary: false) as? [NSDictionary],
               let status = attachments.first?[SCStreamFrameInfo.status.rawValue] as? Int,

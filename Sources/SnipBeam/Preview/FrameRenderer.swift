@@ -28,6 +28,21 @@ final class FrameRenderer: @unchecked Sendable {
     private var active = true
     private var failureHandler: (@Sendable (String) -> Void)?
     private var reportedFailure = false
+    private var frameCheck: (@Sendable (CVPixelBuffer) -> Bool)?
+    private var matchedFrames = 0
+    private var latestMatches: Bool?
+
+    // Opt-in smoke checks inspect pixels on the capture queue without copying or saving frames.
+    func checkFrames(matching check: (@Sendable (CVPixelBuffer) -> Bool)?) async {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                self.frameCheck = check
+                self.matchedFrames = 0
+                self.latestMatches = self.latest.flatMap { pixels in check?(pixels) }
+                continuation.resume()
+            }
+        }
+    }
 
     func setFailureHandler(_ handler: @escaping @Sendable (String) -> Void) {
         queue.async { self.failureHandler = handler }
@@ -42,12 +57,13 @@ final class FrameRenderer: @unchecked Sendable {
         }
     }
 
-    func statistics() async -> (received: Int, presented: Int, failures: Int, size: CGSize, drawableSize: CGSize) {
+    func statistics() async -> (received: Int, presented: Int, failures: Int, size: CGSize, drawableSize: CGSize,
+                               matches: Int, latestMatches: Bool?) {
         await withCheckedContinuation { continuation in
             queue.async {
                 continuation.resume(returning: (self.receivedFrames, self.presentedFrames, self.gpuFailures,
                     self.latest.map { CGSize(width: CVPixelBufferGetWidth($0), height: CVPixelBufferGetHeight($0)) } ?? .zero,
-                    self.lastDrawableSize))
+                    self.lastDrawableSize, self.matchedFrames, self.latestMatches))
             }
         }
     }
@@ -94,6 +110,8 @@ final class FrameRenderer: @unchecked Sendable {
         dispatchPrecondition(condition: .onQueue(queue))
         guard active else { return }
         latest = pixels
+        latestMatches = frameCheck?(pixels)
+        if latestMatches == true { matchedFrames += 1 }
         texture = nil
         receivedFrames += 1
         needsDraw = true
